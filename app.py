@@ -252,6 +252,7 @@ class HealthRecordApp:
         self.load_record_details()
 
     def load_uploaded_documents(self):
+        self.uploaded_documents_list.delete(0, tk.END)
         if self.current_record_index >= 0 and self.current_record_index < len(self.records):
             record_id = self.records[self.current_record_index][0]
             with self.conn:
