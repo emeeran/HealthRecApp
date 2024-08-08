@@ -16,41 +16,31 @@ class HealthRecordApp:
         self.records = []
         self.view_mode = True
 
-        # Patient details
-        self.patient_name = tk.StringVar()
-        self.patient_age = tk.StringVar()
-        self.patient_sex = tk.StringVar()
-        self.existing_disease = tk.StringVar()
-        self.allergy = tk.StringVar()
-
-        # Get patient details on the first run
+        self.patient_details = {}
         self.get_patient_details()
 
-        # Frames setup
-        self.setup_frames()
-
-        # Initialize the uploaded document list 
-        self.setup_uploaded_documents_list()
-
-        # Load records
+        self.setup_gui()
         self.load_records()
-
-        # Update record counter initially
         self.update_record_count()
-
-        # Update medical history after widgets are initialized
         self.update_medical_history()
 
+
+    def setup_gui(self):
+        self.setup_frames()
+        self.setup_buttons()
+        self.setup_input_fields()
+        self.setup_record_display()
+        self.setup_uploaded_documents_list()
+        self.setup_medical_history()
+
     def setup_frames(self):
-        # Create frames
         self.left_frame = ttk.Frame(self.root, padding=(10, 10))
-        self.left_frame.grid(row=0, column=0, sticky="ns", rowspan=4) 
+        self.left_frame.grid(row=0, column=0, sticky="ns", rowspan=4)
         self.center_frame = ttk.Frame(self.root, padding=(10, 10))
         self.center_frame.grid(row=0, column=1, sticky="nsew", rowspan=4)
         self.right_frame = ttk.Frame(self.root, padding=(10, 10))
         self.right_frame.grid(row=0, column=2, sticky="nsew", rowspan=4)
 
-        # Set column and row weights to make them resizable
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=2)
         self.root.columnconfigure(2, weight=2)
@@ -59,20 +49,7 @@ class HealthRecordApp:
         self.root.rowconfigure(2, weight=1)
         self.root.rowconfigure(3, weight=1)
 
-        # Setup left frame buttons
-        self.setup_buttons()
-
-        # Setup center frame input fields
-        self.setup_input_fields()
-
-        # Setup right frame text display
-        self.setup_record_display()
-
-        # Setup medical history display
-        self.setup_medical_history()
-
     def setup_buttons(self):
-        # Buttons setup
         buttons = [
             ("New", self.new_record),
             ("View", self.toggle_view_mode),
@@ -95,7 +72,6 @@ class HealthRecordApp:
         self.record_counter_label.grid(row=len(buttons) + 1, column=0, sticky="ew", pady=5)
 
     def setup_input_fields(self):
-        # Create input fields
         labels = [
             "Date", "Complaint", "Doctor", "Investigation",
             "Diagnosis", "Medication", "Notes", "Follow-up"
@@ -113,23 +89,20 @@ class HealthRecordApp:
             self.input_boxes[label_text].config(state="disabled")
 
     def setup_record_display(self):
-        # Record display setup
         ttk.Label(self.right_frame, text="Medical Record", font=("Helvetica", 14, "bold")).pack(anchor="center")
         self.record_details_text = tk.Text(self.right_frame, wrap="word", height=25, width=45)
         self.record_details_text.pack(expand=True, fill="both", padx=5, pady=5)
         self.record_details_text.config(state="disabled")
 
     def setup_uploaded_documents_list(self):
-        # Setup the listbox to display uploaded documents
         ttk.Label(self.right_frame, text="Uploaded Documents", font=("Helvetica", 12, "bold")).pack(anchor="center", pady=10)
         self.uploaded_documents_list = tk.Listbox(self.right_frame, height=5, width=30)
         self.uploaded_documents_list.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
         self.uploaded_documents_list.bind("<<ListboxSelect>>", self.on_record_selection)
 
     def setup_medical_history(self):
-        # Medical history display setup
-        self.history_frame = ttk.LabelFrame(self.center_frame, text="Brief Medical History", padding=(5, 5) )
-        self.history_frame.grid(row=15, column=0, columnspan=2, sticky="ew", padx=5, pady=10)  # Moved to row 9
+        self.history_frame = ttk.LabelFrame(self.center_frame, text="Brief Medical History", padding=(5, 5))
+        self.history_frame.grid(row=15, column=0, columnspan=2, sticky="ew", padx=5, pady=10)
 
         self.medical_history_text = tk.Text(self.history_frame, wrap="word", height=5, width=50)
         self.medical_history_text.pack(expand=True, fill="both", padx=5, pady=5)
@@ -159,7 +132,6 @@ class HealthRecordApp:
                     document_path TEXT
                 )
             """)
-            # Create table for patient details if it doesn't exist
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS patient_details (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -177,7 +149,7 @@ class HealthRecordApp:
         self.record_details_text.delete(1.0, tk.END)
         self.view_mode = False
         self.update_view_mode()
-        self.current_record_index = len(self.records)  
+        self.current_record_index = len(self.records)
 
     def toggle_view_mode(self):
         self.view_mode = not self.view_mode
@@ -203,35 +175,26 @@ class HealthRecordApp:
 
     def update_display(self):
         self.load_record_details()
-        self.load_uploaded_documents()  
+        self.load_uploaded_documents()
 
     def delete_record(self):
-        if self.records:  
-            # Get the record ID correctly
+        if self.records:
             record_id = self.records[self.current_record_index][0]
-
-            # Delete associated documents
             with self.conn:
                 cursor = self.conn.execute("SELECT document_path FROM health_records WHERE id = ?", (record_id,))
                 document_path = cursor.fetchone()[0]
                 if document_path and os.path.exists(document_path):
                     os.remove(document_path)
-
-            # Delete the record from the database
-            with self.conn:
                 self.conn.execute("DELETE FROM health_records WHERE id = ?", (record_id,))
                 self.conn.commit()
 
-            # Update the listbox and records
             self.uploaded_documents_list.delete(0, tk.END)
             self.load_records()
             self.update_record_count()
 
-            # Adjust the current record index if necessary
             if self.current_record_index >= len(self.records):
                 self.current_record_index = len(self.records) - 1
 
-            # Update the display to reflect changes
             self.update_display()
 
     def save_record(self):
@@ -242,7 +205,6 @@ class HealthRecordApp:
 
         if not self.view_mode:
             if self.current_record_index >= len(self.records):
-                # If it's a new record
                 with self.conn:
                     query = """
                         INSERT INTO health_records (date, complaint, doctor, investigation, diagnosis, medication, notes, follow_up)
@@ -250,10 +212,9 @@ class HealthRecordApp:
                     """
                     self.conn.execute(query, tuple(record_details.values()))
                     self.conn.commit()
-                self.load_records()  # Refresh records
-                self.current_record_index = len(self.records) - 1  # Go to the new record
+                self.load_records()
+                self.current_record_index = len(self.records) - 1
             else:
-                # If it's an existing record
                 record_id = self.records[self.current_record_index][0]
                 with self.conn:
                     query = """
@@ -284,13 +245,11 @@ class HealthRecordApp:
                     os.makedirs('uploaded_docs')
                 destination_path = os.path.join('uploaded_docs', os.path.basename(file_path))
                 shutil.copyfile(file_path, destination_path)
-                # Associate the uploaded document with the current record
-                if not self.view_mode:  # Only allow uploads when in edit mode
+                if not self.view_mode:
                     record_id = self.records[self.current_record_index][0]
                     with self.conn:
                         self.conn.execute("UPDATE health_records SET document_path = ? WHERE id = ?", (destination_path, record_id))
                         self.conn.commit()
-                # Update the document list for the current record
                 self.load_uploaded_documents()
                 self.update_display()
 
@@ -321,15 +280,13 @@ class HealthRecordApp:
         self.records = []
         with self.conn:
             cursor = self.conn.execute("SELECT id, date FROM health_records")
-            for row in cursor.fetchall():
-                self.records.append(row)
+            self.records = cursor.fetchall()
         self.update_record_count()
         self.current_record_index = len(self.records) - 1 if self.records else 0
         self.load_record_details()
 
     def load_uploaded_documents(self):
         self.uploaded_documents_list.delete(0, tk.END)
-        # Only display documents associated with the current record
         if self.current_record_index >= 0 and self.current_record_index < len(self.records):
             record_id = self.records[self.current_record_index][0]
             with self.conn:
@@ -337,7 +294,6 @@ class HealthRecordApp:
                 if (record := cursor.fetchone()):
                     document_path = record[0]
                     if document_path:
-                        # Display only the filename
                         filename = os.path.basename(document_path)
                         self.uploaded_documents_list.insert(tk.END, filename)
 
@@ -351,7 +307,6 @@ class HealthRecordApp:
                     labels = ["Date", "Complaint", "Doctor", "Investigation", "Diagnosis", "Medication", "Notes", "Follow-up"]
                     for label, value in zip(labels, record[1:]):
                         self.record_details_text.insert(tk.END, f"{label}: {value}\n\n")
-                    # Load and display uploaded documents
                     self.load_uploaded_documents()
 
     def get_record_details_from_ui(self):
@@ -373,64 +328,73 @@ class HealthRecordApp:
             patient_data = cursor.fetchone()
 
         if patient_data is None:
-            # Prompt for details using a form
             self.patient_details_form()
         else:
-            # Load existing details
-            self.patient_name.set(patient_data[1])
-            self.patient_age.set(patient_data[2])
-            self.patient_sex.set(patient_data[3])
-            self.existing_disease.set(patient_data[4])
-            self.allergy.set(patient_data[5])
+            self.patient_details = {
+                "name": patient_data[1],
+                "age": patient_data[2],
+                "sex": patient_data[3],
+                "existing_disease": patient_data[4],
+                "allergy": patient_data[5]
+            }
+
+    def get_patient_details(self):
+        with self.conn:
+            cursor = self.conn.execute("SELECT * FROM patient_details")
+            patient_data = cursor.fetchone()
+
+        if patient_data is None:
+            self.patient_details_form()
+        else:
+            self.patient_details = {
+                "name": patient_data[1],
+                "age": patient_data[2],
+                "sex": patient_data[3],
+                "existing_disease": patient_data[4],
+                "allergy": patient_data[5]
+            }
 
     def patient_details_form(self):
-        form_window = tk.Toplevel(self.root)
-        form_window.title("Enter Patient Details")
+        self.form_window = tk.Toplevel(self.root)
+        self.form_window.title("Enter Patient Details")
 
         labels = ["Name:", "Age:", "Sex:", "Existing Diseases:", "Allergies:"]
-        entries = []
+        self.entries = [ttk.Entry(self.form_window) for _ in labels]
 
-        for i, label in enumerate(labels):
-            ttk.Label(form_window, text=label).grid(row=i, column=0, padx=5, pady=5, sticky="w")
-            entry = ttk.Entry(form_window)
+        for i, (label, entry) in enumerate(zip(labels, self.entries)):
+            ttk.Label(self.form_window, text=label).grid(row=i, column=0, padx=5, pady=5, sticky="w")
             entry.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
-            entries.append(entry)
 
-        def save_details():
-            self.patient_name.set(entries[0].get())
-            self.patient_age.set(entries[1].get())
-            self.patient_sex.set(entries[2].get())
-            self.existing_disease.set(entries[3].get())
-            self.allergy.set(entries[4].get())
+        self.save_button = ttk.Button(self.form_window, text="Save", command=self.save_patient_details)
+        self.save_button.grid(row=len(labels), column=0, columnspan=2, pady=10)
 
-            # Save details to the database
-            with self.conn:
-                self.conn.execute(
-                    """INSERT INTO patient_details (name, age, sex, existing_disease, allergy) 
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (self.patient_name.get(), self.patient_age.get(), self.patient_sex.get(),
-                     self.existing_disease.get(), self.allergy.get()),
-                )
-            form_window.destroy()
+        self.form_window.wait_window()
 
-        save_button = ttk.Button(form_window, text="Save", command=save_details)
-        save_button.grid(row=len(labels), column=0, columnspan=2, pady=10)
+    def save_patient_details(self):
+        self.patient_details = {
+            "name": self.entries[0].get(),
+            "age": self.entries[1].get(),
+            "sex": self.entries[2].get(),
+            "existing_disease": self.entries[3].get(),
+            "allergy": self.entries[4].get()
+        }
 
-        form_window.wait_window() # Wait for the form to be closed
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO patient_details (name, age, sex, existing_disease, allergy) VALUES (?, ?, ?, ?, ?)",
+                tuple(self.patient_details.values())
+            )
+        self.form_window.destroy()
 
     def update_medical_history(self):
         self.medical_history_text.config(state="normal")
         self.medical_history_text.delete(1.0, tk.END)
-        self.medical_history_text.insert(tk.END, f"Name: {self.patient_name.get()}\n")
-        self.medical_history_text.insert(tk.END, f"Age: {self.patient_age.get()}\n")
-        self.medical_history_text.insert(tk.END, f"Sex: {self.patient_sex.get()}\n")
-        self.medical_history_text.insert(tk.END, f"Existing Diseases: {self.existing_disease.get()}\n")
-        self.medical_history_text.insert(tk.END, f"Allergies: {self.allergy.get()}")
+        for key, value in self.patient_details.items():
+            self.medical_history_text.insert(tk.END, f"{key.capitalize()}: {value}\n")
         self.medical_history_text.config(state="disabled")
-
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = HealthRecordApp(root)
-    root.resizable(True, True) 
+    root.resizable(True, True)
     root.mainloop()
