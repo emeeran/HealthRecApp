@@ -16,6 +16,16 @@ class HealthRecordApp:
         self.records = []
         self.view_mode = True
 
+        # Patient details
+        self.patient_name = tk.StringVar()
+        self.patient_age = tk.StringVar()
+        self.patient_sex = tk.StringVar()
+        self.existing_disease = tk.StringVar()
+        self.allergy = tk.StringVar()
+
+        # Get patient details on the first run
+        self.get_patient_details()
+
         # Frames setup
         self.setup_frames()
 
@@ -28,20 +38,26 @@ class HealthRecordApp:
         # Update record counter initially
         self.update_record_count()
 
+        # Update medical history after widgets are initialized
+        self.update_medical_history()
+
     def setup_frames(self):
         # Create frames
         self.left_frame = ttk.Frame(self.root, padding=(10, 10))
-        self.left_frame.grid(row=0, column=0, sticky="ns", rowspan=3)
+        self.left_frame.grid(row=0, column=0, sticky="ns", rowspan=4) 
         self.center_frame = ttk.Frame(self.root, padding=(10, 10))
-        self.center_frame.grid(row=0, column=1, sticky="nsew")
+        self.center_frame.grid(row=0, column=1, sticky="nsew", rowspan=4)
         self.right_frame = ttk.Frame(self.root, padding=(10, 10))
-        self.right_frame.grid(row=0, column=2, sticky="nsew", rowspan=3)
+        self.right_frame.grid(row=0, column=2, sticky="nsew", rowspan=4)
 
         # Set column and row weights to make them resizable
         self.root.columnconfigure(0, weight=1)
         self.root.columnconfigure(1, weight=2)
         self.root.columnconfigure(2, weight=2)
         self.root.rowconfigure(0, weight=1)
+        self.root.rowconfigure(1, weight=1)
+        self.root.rowconfigure(2, weight=1)
+        self.root.rowconfigure(3, weight=1)
 
         # Setup left frame buttons
         self.setup_buttons()
@@ -51,6 +67,9 @@ class HealthRecordApp:
 
         # Setup right frame text display
         self.setup_record_display()
+
+        # Setup medical history display
+        self.setup_medical_history()
 
     def setup_buttons(self):
         # Buttons setup
@@ -107,6 +126,15 @@ class HealthRecordApp:
         self.uploaded_documents_list.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
         self.uploaded_documents_list.bind("<<ListboxSelect>>", self.on_record_selection)
 
+    def setup_medical_history(self):
+        # Medical history display setup
+        self.history_frame = ttk.LabelFrame(self.center_frame, text="Brief Medical History", padding=(5, 5) )
+        self.history_frame.grid(row=15, column=0, columnspan=2, sticky="ew", padx=5, pady=10)  # Moved to row 9
+
+        self.medical_history_text = tk.Text(self.history_frame, wrap="word", height=5, width=50)
+        self.medical_history_text.pack(expand=True, fill="both", padx=5, pady=5)
+        self.medical_history_text.config(state="disabled")
+
     def on_focus_in(self, event):
         widget = event.widget
         widget.config(height=5)
@@ -131,6 +159,17 @@ class HealthRecordApp:
                     document_path TEXT
                 )
             """)
+            # Create table for patient details if it doesn't exist
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS patient_details (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT,
+                    age INTEGER,
+                    sex TEXT,
+                    existing_disease TEXT,
+                    allergy TEXT
+                )
+            """)
 
     def new_record(self):
         for input_box in self.input_boxes.values():
@@ -138,7 +177,7 @@ class HealthRecordApp:
         self.record_details_text.delete(1.0, tk.END)
         self.view_mode = False
         self.update_view_mode()
-        self.current_record_index = len(self.records)  # Move to the new record position
+        self.current_record_index = len(self.records)  
 
     def toggle_view_mode(self):
         self.view_mode = not self.view_mode
@@ -164,10 +203,10 @@ class HealthRecordApp:
 
     def update_display(self):
         self.load_record_details()
-        self.load_uploaded_documents()  # Update the document list
+        self.load_uploaded_documents()  
 
     def delete_record(self):
-        if self.records:  # Check if there are any records to delete
+        if self.records:  
             # Get the record ID correctly
             record_id = self.records[self.current_record_index][0]
 
@@ -328,8 +367,70 @@ class HealthRecordApp:
         current_record_number = self.current_record_index + 1
         self.record_counter_label.config(text=f"Record: {current_record_number:03} of {record_count:03}")
 
+    def get_patient_details(self):
+        with self.conn:
+            cursor = self.conn.execute("SELECT * FROM patient_details")
+            patient_data = cursor.fetchone()
+
+        if patient_data is None:
+            # Prompt for details using a form
+            self.patient_details_form()
+        else:
+            # Load existing details
+            self.patient_name.set(patient_data[1])
+            self.patient_age.set(patient_data[2])
+            self.patient_sex.set(patient_data[3])
+            self.existing_disease.set(patient_data[4])
+            self.allergy.set(patient_data[5])
+
+    def patient_details_form(self):
+        form_window = tk.Toplevel(self.root)
+        form_window.title("Enter Patient Details")
+
+        labels = ["Name:", "Age:", "Sex:", "Existing Diseases:", "Allergies:"]
+        entries = []
+
+        for i, label in enumerate(labels):
+            ttk.Label(form_window, text=label).grid(row=i, column=0, padx=5, pady=5, sticky="w")
+            entry = ttk.Entry(form_window)
+            entry.grid(row=i, column=1, padx=5, pady=5, sticky="ew")
+            entries.append(entry)
+
+        def save_details():
+            self.patient_name.set(entries[0].get())
+            self.patient_age.set(entries[1].get())
+            self.patient_sex.set(entries[2].get())
+            self.existing_disease.set(entries[3].get())
+            self.allergy.set(entries[4].get())
+
+            # Save details to the database
+            with self.conn:
+                self.conn.execute(
+                    """INSERT INTO patient_details (name, age, sex, existing_disease, allergy) 
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (self.patient_name.get(), self.patient_age.get(), self.patient_sex.get(),
+                     self.existing_disease.get(), self.allergy.get()),
+                )
+            form_window.destroy()
+
+        save_button = ttk.Button(form_window, text="Save", command=save_details)
+        save_button.grid(row=len(labels), column=0, columnspan=2, pady=10)
+
+        form_window.wait_window() # Wait for the form to be closed
+
+    def update_medical_history(self):
+        self.medical_history_text.config(state="normal")
+        self.medical_history_text.delete(1.0, tk.END)
+        self.medical_history_text.insert(tk.END, f"Name: {self.patient_name.get()}\n")
+        self.medical_history_text.insert(tk.END, f"Age: {self.patient_age.get()}\n")
+        self.medical_history_text.insert(tk.END, f"Sex: {self.patient_sex.get()}\n")
+        self.medical_history_text.insert(tk.END, f"Existing Diseases: {self.existing_disease.get()}\n")
+        self.medical_history_text.insert(tk.END, f"Allergies: {self.allergy.get()}")
+        self.medical_history_text.config(state="disabled")
+
+
 if __name__ == "__main__":
     root = tk.Tk()
     app = HealthRecordApp(root)
-    root.resizable(True, True)
+    root.resizable(True, True) 
     root.mainloop()
