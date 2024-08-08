@@ -63,6 +63,7 @@ class HealthRecordApp:
             ("Upload", self.upload_document),
             ("Download", self.download_document),
             ("Export to CSV", self.export_to_csv),
+            ("Import from CSV", self.import_from_csv),  # New button
             ("Close", self.root.quit),
         ]
         for i, (text, command) in enumerate(buttons):
@@ -184,13 +185,13 @@ class HealthRecordApp:
             self.load_records()
             self.update_record_display()
 
-    def save_record(self):
+    def save_record(self): 
         record_details = self.get_record_details_from_ui()
         if not any(record_details.values()):
             print("Cannot save an empty record.")
             return
-
-        with self.conn:  # Move with statement here
+        
+        with self.conn: 
             if self.current_record_id:
                 # Update existing record
                 query = """
@@ -213,13 +214,12 @@ class HealthRecordApp:
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """
                 cursor = self.conn.execute(query, tuple(record_details.values()))
-                self.current_record_id = cursor.lastrowid 
+                self.current_record_id = cursor.lastrowid
 
         self.load_records()
         self.update_record_display()
         self.toggle_view_mode()
-        
-        
+
     def upload_document(self):
         if self.current_record_id:
             file_paths = filedialog.askopenfilenames()
@@ -376,6 +376,37 @@ class HealthRecordApp:
                 writer.writerow(['ID', 'Date', 'Complaint', 'Doctor', 'Investigation', 'Diagnosis', 'Medication', 'Notes', 'Follow-up', 'Document Path'])
                 writer.writerows(rows)
             print(f"Records exported to {save_path}")
+    
+    def import_from_csv(self):
+        file_path = filedialog.askopenfilename(
+            defaultextension=".csv", filetypes=[("CSV Files", "*.csv")]
+        )
+        if file_path:
+            try:
+                with open(file_path, 'r') as csvfile:
+                    reader = csv.reader(csvfile)
+                    header = next(reader)  # Skip the header row
+
+                    for row in reader:
+                        # Ensure the row has the correct number of columns
+                        if len(row) == 10: 
+                            with self.conn:
+                                self.conn.execute(
+                                    """
+                                    INSERT INTO health_records (date, complaint, doctor, investigation, diagnosis, medication, notes, follow_up, document_path) 
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    """,
+                                    row[1:],  # Skip the ID column 
+                                )
+                        else:
+                            print(f"Skipping row due to incorrect column count: {row}")
+
+                self.load_records()
+                self.update_record_display()
+                print(f"Records imported from {file_path}")
+
+            except FileNotFoundError:
+                print(f"File not found: {file_path}")
 
 if __name__ == "__main__":
     root = tk.Tk()
