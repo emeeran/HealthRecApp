@@ -19,8 +19,14 @@ class HealthRecordApp:
         # Frames setup
         self.setup_frames()
 
+        # Initialize the uploaded document list 
+        self.setup_uploaded_documents_list()
+
         # Load records
         self.load_records()
+
+        # Update record counter initially
+        self.update_record_count()
 
     def setup_frames(self):
         # Create frames
@@ -94,6 +100,13 @@ class HealthRecordApp:
         self.record_details_text.pack(expand=True, fill="both", padx=5, pady=5)
         self.record_details_text.config(state="disabled")
 
+    def setup_uploaded_documents_list(self):
+        # Setup the listbox to display uploaded documents
+        ttk.Label(self.right_frame, text="Uploaded Documents", font=("Helvetica", 12, "bold")).pack(anchor="center", pady=10)
+        self.uploaded_documents_list = tk.Listbox(self.right_frame, height=5, width=30)
+        self.uploaded_documents_list.pack(expand=True, fill=tk.BOTH, padx=5, pady=5)
+        self.uploaded_documents_list.bind("<<ListboxSelect>>", self.on_record_selection)
+
     def on_focus_in(self, event):
         widget = event.widget
         widget.config(height=5)
@@ -106,7 +119,7 @@ class HealthRecordApp:
         with self.conn:
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS health_records (
-                    id INTEGER PRIMARY KEY,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
                     date TEXT,
                     complaint TEXT,
                     doctor TEXT,
@@ -125,10 +138,12 @@ class HealthRecordApp:
         self.record_details_text.delete(1.0, tk.END)
         self.view_mode = False
         self.update_view_mode()
+        self.current_record_index = len(self.records)  # Move to the new record position
 
     def toggle_view_mode(self):
         self.view_mode = not self.view_mode
         self.update_view_mode()
+        self.update_display()
 
     def update_view_mode(self):
         if self.view_mode:
@@ -149,19 +164,35 @@ class HealthRecordApp:
 
     def update_display(self):
         self.load_record_details()
+        self.load_uploaded_documents()  # Update the document list
 
     def delete_record(self):
-        if (selected_index := self.uploaded_documents_list.curselection()):
-            record_id = self.uploaded_documents_list.get(selected_index[0]).split(":")[0]
+        if self.records:  # Check if there are any records to delete
+            # Get the record ID correctly
+            record_id = self.records[self.current_record_index][0]
+
+            # Delete associated documents
+            with self.conn:
+                cursor = self.conn.execute("SELECT document_path FROM health_records WHERE id = ?", (record_id,))
+                document_path = cursor.fetchone()[0]
+                if document_path and os.path.exists(document_path):
+                    os.remove(document_path)
+
+            # Delete the record from the database
             with self.conn:
                 self.conn.execute("DELETE FROM health_records WHERE id = ?", (record_id,))
                 self.conn.commit()
 
+            # Update the listbox and records
             self.uploaded_documents_list.delete(0, tk.END)
             self.load_records()
             self.update_record_count()
+
+            # Adjust the current record index if necessary
             if self.current_record_index >= len(self.records):
                 self.current_record_index = len(self.records) - 1
+
+            # Update the display to reflect changes
             self.update_display()
 
     def save_record(self):
@@ -171,7 +202,19 @@ class HealthRecordApp:
             return
 
         if not self.view_mode:
-            if self.records:
+            if self.current_record_index >= len(self.records):
+                # If it's a new record
+                with self.conn:
+                    query = """
+                        INSERT INTO health_records (date, complaint, doctor, investigation, diagnosis, medication, notes, follow_up)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """
+                    self.conn.execute(query, tuple(record_details.values()))
+                    self.conn.commit()
+                self.load_records()  # Refresh records
+                self.current_record_index = len(self.records) - 1  # Go to the new record
+            else:
+                # If it's an existing record
                 record_id = self.records[self.current_record_index][0]
                 with self.conn:
                     query = """
@@ -188,19 +231,11 @@ class HealthRecordApp:
                     """
                     self.conn.execute(query, (*record_details.values(), record_id))
                     self.conn.commit()
-            else:
-                with self.conn:
-                    query = """
-                        INSERT INTO health_records (date, complaint, doctor, investigation, diagnosis, medication, notes, follow_up)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """
-                    self.conn.execute(query, tuple(record_details.values()))
-                    self.conn.commit()
 
         self.toggle_view_mode()
         self.load_records()
         self.update_record_count()
-        self.load_record_details()
+        self.update_display()
 
     def upload_document(self):
         file_paths = filedialog.askopenfilenames()
@@ -210,22 +245,26 @@ class HealthRecordApp:
                     os.makedirs('uploaded_docs')
                 destination_path = os.path.join('uploaded_docs', os.path.basename(file_path))
                 shutil.copyfile(file_path, destination_path)
-                if not self.view_mode:
+                # Associate the uploaded document with the current record
+                if not self.view_mode:  # Only allow uploads when in edit mode
                     record_id = self.records[self.current_record_index][0]
                     with self.conn:
                         self.conn.execute("UPDATE health_records SET document_path = ? WHERE id = ?", (destination_path, record_id))
                         self.conn.commit()
+                # Update the document list for the current record
                 self.load_uploaded_documents()
                 self.update_display()
 
     def download_document(self):
         if (selected_index := self.uploaded_documents_list.curselection()):
-            record_id = self.uploaded_documents_list.get(selected_index[0]).split(":")[0]
+            record_id = int(self.uploaded_documents_list.get(selected_index[0]).split(":")[0])
             with self.conn:
                 cursor = self.conn.execute("SELECT document_path FROM health_records WHERE id = ?", (record_id,))
                 document_path = cursor.fetchone()[0]
             if document_path:
-                shutil.copy(document_path, os.path.basename(document_path))
+                save_path = filedialog.asksaveasfilename(defaultextension=".txt")
+                if save_path:
+                    shutil.copy(document_path, save_path)
 
     def scroll_down(self):
         if self.current_record_index < len(self.records) - 1:
@@ -242,29 +281,26 @@ class HealthRecordApp:
     def load_records(self):
         self.records = []
         with self.conn:
-            cursor = self.conn.execute("SELECT * FROM health_records")
+            cursor = self.conn.execute("SELECT id, date FROM health_records")
             for row in cursor.fetchall():
-                record_id = row[0]
-                date = row[1]
-                self.records.append((record_id, date))
+                self.records.append(row)
         self.update_record_count()
         self.current_record_index = len(self.records) - 1 if self.records else 0
         self.load_record_details()
 
     def load_uploaded_documents(self):
         self.uploaded_documents_list.delete(0, tk.END)
+        # Only display documents associated with the current record
         if self.current_record_index >= 0 and self.current_record_index < len(self.records):
             record_id = self.records[self.current_record_index][0]
             with self.conn:
-                cursor = self.conn.execute("SELECT * FROM health_records WHERE id = ?", (record_id,))
+                cursor = self.conn.execute("SELECT document_path FROM health_records WHERE id = ?", (record_id,))
                 if (record := cursor.fetchone()):
-                    date = record[1]
-                    self.uploaded_documents_list.insert(tk.END, f"{record_id}: {date}")
-        with self.conn:
-            cursor = self.conn.execute("SELECT * FROM health_records WHERE document_path IS NOT NULL")
-            for row in cursor.fetchall():
-                record_id = row[0]
-                self.uploaded_documents_list.insert(tk.END, f"{record_id}: {date}")
+                    document_path = record[0]
+                    if document_path:
+                        # Display only the filename
+                        filename = os.path.basename(document_path)
+                        self.uploaded_documents_list.insert(tk.END, filename)
 
     def load_record_details(self):
         self.record_details_text.delete(1.0, tk.END)
@@ -276,13 +312,16 @@ class HealthRecordApp:
                     labels = ["Date", "Complaint", "Doctor", "Investigation", "Diagnosis", "Medication", "Notes", "Follow-up"]
                     for label, value in zip(labels, record[1:]):
                         self.record_details_text.insert(tk.END, f"{label}: {value}\n\n")
+                    # Load and display uploaded documents
+                    self.load_uploaded_documents()
 
     def get_record_details_from_ui(self):
         return {label: input_box.get("1.0", tk.END).strip() if isinstance(input_box, tk.Text) else input_box.get().strip() for label, input_box in self.input_boxes.items()}
 
     def on_record_selection(self, event):
-        self.current_record_index = self.uploaded_documents_list.curselection()[0]
-        self.update_display()
+        if (selected_index := self.uploaded_documents_list.curselection()):
+            self.current_record_index = selected_index[0]
+            self.update_display()
 
     def update_record_count(self):
         record_count = len(self.records)
